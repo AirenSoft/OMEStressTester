@@ -1,54 +1,75 @@
-# Stress Tester for OvenMediaEngine
+# OvenMediaEngine Stress Tester
 
-A tool to test OvenMediaEngine stress by progressively starting FFmpeg streams at configurable intervals until receiving an INTERNAL_QUEUE_CONGESTION alert.
+A tool designed to test OvenMediaEngine queue congestion by progressively starting FFmpeg streams at configurable intervals until receiving an INTERNAL_QUEUE_CONGESTION alert.
 
 ## Overview
 
-This tester automatically:
-1. Starts an HTTP callback server to receive alerts from OvenMediaEngine
-2. Progressively launches FFmpeg processes that stream to OvenMediaEngine
-3. Monitors for INTERNAL_QUEUE_CONGESTION alerts
-4. Reports test results including total streams, duration, and stops all processes
+This stress tester automatically:
+- Starts an HTTP callback server to receive alerts from OvenMediaEngine.
+- Progressively launches FFmpeg processes that stream to OvenMediaEngine.
+- Monitors for the specific INTERNAL_QUEUE_CONGESTION alert.
+- Reports test results, including the total number of streams and test duration, then stops all running processes.
 
 ## Prerequisites
 
 ### OvenMediaEngine
-- OvenMediaEngine is pre-configured to send alerts
-- OvenMediaEngine has pre-configured encoding profile to test
-- OvenMediaEngine must be able to access the host running this tester
+- OvenMediaEngine must be pre-configured to send alerts to the tester's host. [See example](#alert-configuration).
+- OvenMediaEngine needs a pre-configured encoding profile in the target Application to test. [See example](#application-configuration).
+- OvenMediaEngine must be able to access the host running tester app to send alerts.
 
 ### Tester App
-- Python 3.6 or higher
-- FFmpeg installed
+- **Python 3.6 or higher** is required.
+  - Please check the Python version by running either `python -V` or `python3 -V`.
+- **FFmpeg** must be installed and executable.
+  - Please check the FFmpeg installed by running either `ffmpeg -version` or `path/to/ffmpeg/ffmpeg -version`.
+- A **Video file** to stream to OvenMediaEngine must be prepared.
+  - We provide a sample video for the stress tester: `sample-video.mp4` (1080p, 30 fps, 5 Mbps).
 
-## Tester Configuration
+## Project Structure
 
-Edit `config.ini` to customize the test parameters:
+```
+OMEStressTester/
+├── OMEStressTester.py      # Main stress tester script
+├── config.ini              # Configuration file for test parameters
+├── sample-video.mp4        # Sample video file for streaming
+├── ome-stress-tester.log   # Log file (generated during execution)
+```
+
+## Stress Tester Configuration
+
+Edit the `config.ini` file to customize the test parameters:
 
 ```ini
 [Server]
 # Port for receiving OvenMediaEngine alert callbacks
+# The endpoint of the alert callback server is fixed as http://your_test_app_host:alert_callback_server_port/callback
 alert_callback_server_port = 8080
 
 [Stream]
 # Interval (in seconds) between starting each FFmpeg stream
 ffmpeg_execution_interval = 10
 
-# FFmpeg command template for RTMP streaming
-# ${seq} will be replaced with sequential numbers (0, 1, 2, ...)
-# Update the RTMP URL to match your OvenMediaEngine configuration
-ffmpeg_command = ffmpeg -re -stream_loop -1 -i sample-video.mp4 -c copy -f flv rtmp://localhost:1935/perf/stream_${seq}
+# FFmpeg command template for RTMP streaming to OvenMediaEngine.
+# Use ${seq} as a placeholder for stream sequence number.
+# The tester will execute the command by incrementing ${seq} from 0 by 1 each time.
+# Make sure to verify the OvenMediaEngine address (host, port, app name).
+
+# Example for RTMP:
+ffmpeg_command = ffmpeg -re -stream_loop -1 -i sample-video.mp4 -c copy -f flv rtmp://localhost:1935/app/stream_${seq}
+
+# Example for SRT:
+# ffmpeg_command = ffmpeg -re -stream_loop -1 -i sample-video.mp4 -c copy -f mpegts srt://localhost:9999?streamid=default/app/stream_${seq}
 ```
 
 ## OvenMediaEngine Configuration
 
-### Alert
+### Alert configuration
 
-Configure OvenMediaEngine to send alerts to 솓 tester. Add the `InternalQueueCongestion` rule to your OvenMediaEngine alert configuration
+Configure OvenMediaEngine to send alerts to the tester. Add the `InternalQueueCongestion` rule to your Alert configuration:
 
 ```xml
 <Alert>
-    <Url>http://your_host:8080/callback</Url>
+    <Url>http://your_test_app_host:8080/callback</Url>
     <SecretKey>1234</SecretKey>
     <Timeout>3000</Timeout>
     <Rules>
@@ -58,14 +79,13 @@ Configure OvenMediaEngine to send alerts to 솓 tester. Add the `InternalQueueCo
 ```
 
 
-### App
+### Application configuration
 
-Pre-configure the output profile in the following format:
+Pre-configure the output profile to test.
 
 ```xml
 <Application>
   <Name>perf</Name>
-  <!-- Application type (live/vod) -->
   <Type>live</Type>
   <OutputProfiles>
     <!-- Common setting for decoders. Decodes is optional. -->
@@ -138,14 +158,13 @@ Pre-configure the output profile in the following format:
     <OVT />
     <LLHLS>
       <ChunkDuration>1</ChunkDuration>
-      <!-- <PartHoldBack> SHOULD be at least three times the <ChunkDuration> -->
       <PartHoldBack>3</PartHoldBack>
       <SegmentDuration>6</SegmentDuration>
       <SegmentCount>10</SegmentCount>
       <CrossDomains>
         <Url>*</Url>
       </CrossDomains>
-      <CreateDefaultPlaylist>true</CreateDefaultPlaylist>      <!-- llhls.m3u8 -->
+      <CreateDefaultPlaylist>true</CreateDefaultPlaylist>
     </LLHLS>
     <HLS>
       <SegmentCount>4</SegmentCount>
@@ -153,7 +172,7 @@ Pre-configure the output profile in the following format:
       <CrossDomains>
         <Url>*</Url>
       </CrossDomains>
-      <CreateDefaultPlaylist>true</CreateDefaultPlaylist>      <!-- ts:playlist.m3u8 -->
+      <CreateDefaultPlaylist>true</CreateDefaultPlaylist>
     </HLS>
   </Publishers>
 </Application>
@@ -163,8 +182,14 @@ Pre-configure the output profile in the following format:
 
 ### Running the Tester
 
-```shell
+```bash
 python OMEStressTester.py
+```
+
+or 
+
+```bash
+python3 OMEStressTester.py
 ```
 
 ### Expected Output
@@ -195,17 +220,14 @@ Stopping all FFMPEG processes...
 ============================================================
 Test Results:
   - Alert Type: INTERNAL_QUEUE_CONGESTION
-  - Total Streams Started: 15
-  - Active Streams at Alert: 15
-  - Test Duration: 150.45 seconds
-  - FFmpeg Execution Interval: 10 seconds
+  - Total Streams Started: 11
+  - Test Duration: 115.68 seconds
 ============================================================
-Program terminating...
 ```
 
 ## Log Files
 
-Test logs are saved to `stress-tester.log` in the project directory. The log includes:
+Test logs are saved to `ome-stress-tester.log` in the project directory. The log includes:
 - Configuration at startup
 - Each FFmpeg stream start with full command
 - Alert callbacks received
