@@ -54,6 +54,7 @@ logging.basicConfig(
 # FFMPEG Process Management
 # -------------------------------
 processes = []
+processes_lock = threading.Lock()
 stop_flag = False
 start_time = None
 
@@ -71,7 +72,8 @@ def start_ffmpeg_stream(index: int):
         )
 
         # Add to processes list immediately to ensure cleanup
-        processes.append(proc)
+        with processes_lock:
+            processes.append(proc)
         logging.debug(
             f"FFmpeg process {index} started with PID: {proc.pid}, added to process list")
 
@@ -81,7 +83,9 @@ def start_ffmpeg_stream(index: int):
         # Check if process is still running
         if proc.poll() is not None:
             # Process has already terminated, remove from list
-            processes.remove(proc)
+            with processes_lock:
+                if proc in processes:
+                    processes.remove(proc)
 
             stdout, stderr = proc.communicate()
             logging.error("=" * 60)
@@ -143,14 +147,23 @@ def ffmpeg_runner():
 def stop_all_ffmpeg():
     """Stop all ffmpeg processes"""
     logging.info("Stopping all FFMPEG processes...")
-    for p in processes:
-        if p.poll() is None:
-            try:
+
+    with processes_lock:
+        processes_copy = processes.copy()
+        processes.clear()
+
+    for p in processes_copy:
+        try:
+            # Check if process exists and is running
+            if p.poll() is None:
                 os.kill(p.pid, signal.SIGTERM)
                 logging.debug(f"Killed process {p.pid}")
-            except Exception as e:
-                logging.error(f"Error killing process {p.pid}: {e}")
-    processes.clear()
+            else:
+                logging.debug(f"Process {p.pid} already terminated")
+        except ProcessLookupError:
+            logging.debug(f"Process {p.pid} not found (already terminated)")
+        except Exception as e:
+            logging.error(f"Error killing process {p.pid}: {e}")
 
 
 def monitor_ffmpeg_processes():
@@ -160,7 +173,11 @@ def monitor_ffmpeg_processes():
     while not stop_flag:
         time.sleep(2)  # Check every 2 seconds
 
-        for proc in processes[:]:  # Use a copy to avoid modification during iteration
+        with processes_lock:
+            # Use a copy to avoid modification during iteration
+            processes_copy = processes.copy()
+
+        for proc in processes_copy:
             if proc.poll() is not None:
                 # Process has terminated
                 returncode = proc.returncode
@@ -239,7 +256,8 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
                                 logging.info(
                                     "INTERNAL_QUEUE_CONGESTION alert received.")
 
-                                total_streams = len(processes)
+                                with processes_lock:
+                                    total_streams = len(processes)
                                 test_duration = time.time() - start_time if start_time else 0
 
                                 stop_all_ffmpeg()
