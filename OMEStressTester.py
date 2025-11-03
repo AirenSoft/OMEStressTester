@@ -27,6 +27,14 @@ FFMPEG_EXECUTION_INTERVAL = config.getint(
     'Stream', 'ffmpeg_execution_interval')
 FFMPEG_COMMAND = config.get('Stream', 'ffmpeg_command')
 
+MESSAGE_CODES = [
+    "INTERNAL_QUEUE_CONGESTION",
+    "EGRESS_STREAM_CREATION_FAILED_BY_OUTPUT_PROFILE",
+    "EGRESS_STREAM_CREATION_FAILED_BY_DECODER",
+    "EGRESS_STREAM_CREATION_FAILED_BY_ENCODER",
+    "EGRESS_STREAM_CREATION_FAILED_BY_FILTER",
+]
+
 # -------------------------------
 # Logger Configuration
 # -------------------------------
@@ -233,9 +241,9 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
                     # Parse JSON and read 'type' key
                     payload_json = json.loads(payload)
 
-                    payload_type = payload_json.get('type', 'N/A')
+                    alert_type = payload_json.get('type', 'N/A')
 
-                    if payload_type == "INTERNAL_QUEUE":
+                    if alert_type == "INTERNAL_QUEUE" or alert_type == "EGRESS":
 
                         #  "messages": [
                         #     {
@@ -243,18 +251,20 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
                         #     "description": "Internal queue(s) is currently congested"
                         #     }
                         # ]
-                        payload_messages = payload_json.get('messages', [])
+                        alert_messages = payload_json.get('messages', [])
 
                         # Check if any message has INTERNAL_QUEUE_CONGESTION code
-                        for message in payload_messages:
+                        for message in alert_messages:
 
-                            if message.get('code') == "INTERNAL_QUEUE_CONGESTION":
+                            alert_message_code = message.get('code', 'N/A')
+
+                            if alert_message_code in MESSAGE_CODES:
 
                                 global stop_flag
                                 stop_flag = True
 
                                 logging.info(
-                                    "INTERNAL_QUEUE_CONGESTION alert received.")
+                                    f"{alert_type} - {alert_message_code} alert received. {message.get('description', 'No description')}")
 
                                 with processes_lock:
                                     total_streams = len(processes)
@@ -265,7 +275,7 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
                                 logging.info("=" * 60)
                                 logging.info("Test Results:")
                                 logging.info(
-                                    f"  - Alert Type: INTERNAL_QUEUE_CONGESTION")
+                                    f"  - Alert message code: {alert_message_code}")
                                 logging.info(
                                     f"  - Total Streams Started: {total_streams}")
                                 logging.info(
