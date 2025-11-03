@@ -23,6 +23,8 @@ config.read('config.ini')
 LOG_FILE = "ome-stress-tester.log"
 ALERT_CALLBACK_SERVER_PORT = config.getint(
     'Server', 'alert_callback_server_port')
+MAX_FFMPEG_EXECUTION_COUNT = config.getint(
+    'Stream', 'max_ffmpeg_execution_count')
 FFMPEG_EXECUTION_INTERVAL = config.getint(
     'Stream', 'ffmpeg_execution_interval')
 FFMPEG_COMMAND = config.get('Stream', 'ffmpeg_command')
@@ -145,6 +147,12 @@ def ffmpeg_runner():
     index = 0
 
     while not stop_flag:
+
+        if MAX_FFMPEG_EXECUTION_COUNT and index >= MAX_FFMPEG_EXECUTION_COUNT:
+            logging.info(
+                f"Reached maximum FFmpeg execution count of {MAX_FFMPEG_EXECUTION_COUNT}. Stopping further executions.")
+            break
+
         proc = start_ffmpeg_stream(index)
 
         if proc is None:
@@ -369,6 +377,8 @@ if __name__ == "__main__":
     logging.info(f"  - Log File: {LOG_FILE}")
     logging.info(
         f"  - Alert Callback Server Port: {ALERT_CALLBACK_SERVER_PORT}")
+    logging.info(
+        f"  - Max FFmpeg Execution Count: {MAX_FFMPEG_EXECUTION_COUNT}")
     logging.info(
         f"  - FFmpeg Execution Interval: {FFMPEG_EXECUTION_INTERVAL} seconds")
     logging.info(f"  - FFmpeg Command: {FFMPEG_COMMAND}")
