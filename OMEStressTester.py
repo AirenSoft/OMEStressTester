@@ -77,11 +77,22 @@ def start_ffmpeg_stream(index: int):
         if proc.poll() is not None:
             # Process has already terminated
             stdout, stderr = proc.communicate()
+            logging.error("=" * 60)
             logging.error(f"FFmpeg process {index} failed to start!")
             logging.error(f"Exit code: {proc.returncode}")
+            logging.error(f"Command: {cmd}")
+            
+            if stdout:
+                stdout_text = stdout.decode('utf-8', errors='ignore').strip()
+                if stdout_text:
+                    logging.error(f"STDOUT:\n{stdout_text}")
+            
             if stderr:
-                logging.error(
-                    f"Error output: {stderr.decode('utf-8', errors='ignore')[:500]}")
+                stderr_text = stderr.decode('utf-8', errors='ignore').strip()
+                if stderr_text:
+                    logging.error(f"STDERR:\n{stderr_text}")
+            
+            logging.error("=" * 60)
             return None
         else:
             logging.debug(
@@ -89,11 +100,17 @@ def start_ffmpeg_stream(index: int):
             return proc
 
     except FileNotFoundError:
+        logging.error("=" * 60)
         logging.error(
             f"FFmpeg executable not found. Check if FFmpeg is installed and in PATH.")
+        logging.error(f"Command attempted: {cmd}")
+        logging.error("=" * 60)
         return None
     except Exception as e:
+        logging.error("=" * 60)
         logging.error(f"Failed to start FFmpeg process {index}: {e}")
+        logging.error(f"Command: {cmd}")
+        logging.error("=" * 60)
         return None
 
 
@@ -129,6 +146,43 @@ def stop_all_ffmpeg():
             except Exception as e:
                 logging.error(f"Error killing process {p.pid}: {e}")
     processes.clear()
+
+
+def monitor_ffmpeg_processes():
+    """Monitor running FFmpeg processes and log if they terminate unexpectedly"""
+    global stop_flag
+    
+    while not stop_flag:
+        time.sleep(2)  # Check every 2 seconds
+        
+        for proc in processes[:]:  # Use a copy to avoid modification during iteration
+            if proc.poll() is not None:
+                # Process has terminated
+                returncode = proc.returncode
+                
+                if returncode != 0:
+                    # Non-zero exit code indicates an error
+                    try:
+                        stdout, stderr = proc.communicate(timeout=1)
+                        
+                        logging.warning("=" * 60)
+                        logging.warning(f"FFmpeg process (PID: {proc.pid}) terminated unexpectedly!")
+                        logging.warning(f"Exit code: {returncode}")
+                        
+                        if stdout:
+                            stdout_text = stdout.decode('utf-8', errors='ignore').strip()
+                            if stdout_text:
+                                logging.warning(f"STDOUT:\n{stdout_text[-1000:]}")  # Last 1000 chars
+                        
+                        if stderr:
+                            stderr_text = stderr.decode('utf-8', errors='ignore').strip()
+                            if stderr_text:
+                                logging.warning(f"STDERR:\n{stderr_text[-1000:]}")  # Last 1000 chars
+                        
+                        logging.warning("=" * 60)
+                    except Exception as e:
+                        logging.error(f"Error reading terminated process output: {e}")
+
 
 # -------------------------------
 # HTTP Server Handler
@@ -238,6 +292,11 @@ if __name__ == "__main__":
 
         # Record test start time
         start_time = time.time()
+
+        # Start FFmpeg process monitor thread
+        monitor_thread = threading.Thread(target=monitor_ffmpeg_processes, daemon=True)
+        monitor_thread.start()
+        logging.debug("FFmpeg process monitor started")
 
         # Start FFmpeg execution thread after server is ready
         thread = threading.Thread(target=ffmpeg_runner, daemon=True)
