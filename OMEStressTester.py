@@ -81,17 +81,17 @@ def start_ffmpeg_stream(index: int):
             logging.error(f"FFmpeg process {index} failed to start!")
             logging.error(f"Exit code: {proc.returncode}")
             logging.error(f"Command: {cmd}")
-            
+
             if stdout:
                 stdout_text = stdout.decode('utf-8', errors='ignore').strip()
                 if stdout_text:
                     logging.error(f"STDOUT:\n{stdout_text}")
-            
+
             if stderr:
                 stderr_text = stderr.decode('utf-8', errors='ignore').strip()
                 if stderr_text:
                     logging.error(f"STDERR:\n{stderr_text}")
-            
+
             logging.error("=" * 60)
             return None
         else:
@@ -151,37 +151,45 @@ def stop_all_ffmpeg():
 def monitor_ffmpeg_processes():
     """Monitor running FFmpeg processes and log if they terminate unexpectedly"""
     global stop_flag
-    
+
     while not stop_flag:
         time.sleep(2)  # Check every 2 seconds
-        
+
         for proc in processes[:]:  # Use a copy to avoid modification during iteration
             if proc.poll() is not None:
                 # Process has terminated
                 returncode = proc.returncode
-                
+
                 if returncode != 0:
                     # Non-zero exit code indicates an error
                     try:
                         stdout, stderr = proc.communicate(timeout=1)
-                        
+
                         logging.warning("=" * 60)
-                        logging.warning(f"FFmpeg process (PID: {proc.pid}) terminated unexpectedly!")
+                        logging.warning(
+                            f"FFmpeg process (PID: {proc.pid}) terminated unexpectedly!")
                         logging.warning(f"Exit code: {returncode}")
-                        
+
                         if stdout:
-                            stdout_text = stdout.decode('utf-8', errors='ignore').strip()
+                            stdout_text = stdout.decode(
+                                'utf-8', errors='ignore').strip()
                             if stdout_text:
-                                logging.warning(f"STDOUT:\n{stdout_text[-1000:]}")  # Last 1000 chars
-                        
+                                # Last 1000 chars
+                                logging.warning(
+                                    f"STDOUT:\n{stdout_text[-1000:]}")
+
                         if stderr:
-                            stderr_text = stderr.decode('utf-8', errors='ignore').strip()
+                            stderr_text = stderr.decode(
+                                'utf-8', errors='ignore').strip()
                             if stderr_text:
-                                logging.warning(f"STDERR:\n{stderr_text[-1000:]}")  # Last 1000 chars
-                        
+                                # Last 1000 chars
+                                logging.warning(
+                                    f"STDERR:\n{stderr_text[-1000:]}")
+
                         logging.warning("=" * 60)
                     except Exception as e:
-                        logging.error(f"Error reading terminated process output: {e}")
+                        logging.error(
+                            f"Error reading terminated process output: {e}")
 
 
 # -------------------------------
@@ -294,7 +302,8 @@ if __name__ == "__main__":
         start_time = time.time()
 
         # Start FFmpeg process monitor thread
-        monitor_thread = threading.Thread(target=monitor_ffmpeg_processes, daemon=True)
+        monitor_thread = threading.Thread(
+            target=monitor_ffmpeg_processes, daemon=True)
         monitor_thread.start()
         logging.debug("FFmpeg process monitor started")
 
