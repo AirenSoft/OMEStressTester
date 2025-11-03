@@ -227,6 +227,11 @@ def monitor_ffmpeg_processes():
 # -------------------------------
 
 
+class ReuseAddrTCPServer(socketserver.TCPServer):
+    """TCPServer with SO_REUSEADDR option enabled"""
+    allow_reuse_address = True
+
+
 class CallbackHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path.startswith("/callback"):
@@ -327,7 +332,7 @@ if __name__ == "__main__":
     logging.info("=" * 60)
 
     # Start HTTP server first
-    with socketserver.TCPServer(("", ALERT_CALLBACK_SERVER_PORT), CallbackHandler) as httpd:
+    with ReuseAddrTCPServer(("", ALERT_CALLBACK_SERVER_PORT), CallbackHandler) as httpd:
         logging.info(
             f"Alert callback server running on port {ALERT_CALLBACK_SERVER_PORT}")
 
