@@ -70,12 +70,19 @@ def start_ffmpeg_stream(index: int):
             stderr=subprocess.PIPE
         )
 
+        # Add to processes list immediately to ensure cleanup
+        processes.append(proc)
+        logging.debug(
+            f"FFmpeg process {index} started with PID: {proc.pid}, added to process list")
+
         # Wait briefly to check if process starts successfully
         time.sleep(0.5)
 
         # Check if process is still running
         if proc.poll() is not None:
-            # Process has already terminated
+            # Process has already terminated, remove from list
+            processes.remove(proc)
+
             stdout, stderr = proc.communicate()
             logging.error("=" * 60)
             logging.error(f"FFmpeg process {index} failed to start!")
@@ -96,7 +103,7 @@ def start_ffmpeg_stream(index: int):
             return None
         else:
             logging.debug(
-                f"FFmpeg process {index} started successfully with PID: {proc.pid}")
+                f"FFmpeg process {index} verified successfully")
             return proc
 
     except FileNotFoundError:
@@ -128,8 +135,6 @@ def ffmpeg_runner():
                 f"FFmpeg process {index} failed to start. Terminating program...")
             stop_flag = True
             os._exit(1)  # Exit with error code
-        else:
-            processes.append(proc)
 
         index += 1
         time.sleep(FFMPEG_EXECUTION_INTERVAL)
