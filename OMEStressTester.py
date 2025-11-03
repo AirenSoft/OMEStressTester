@@ -65,7 +65,6 @@ processes = []
 processes_lock = threading.Lock()
 stop_flag = False
 start_time = None
-httpd_server = None  # Global reference to HTTP server
 
 
 def start_ffmpeg_stream(index: int):
@@ -136,7 +135,7 @@ def start_ffmpeg_stream(index: int):
 
 def ffmpeg_runner():
     """Start one ffmpeg process every interval"""
-    global stop_flag, httpd_server
+    global stop_flag
 
     index = 0
 
@@ -147,13 +146,7 @@ def ffmpeg_runner():
             logging.error(
                 f"FFmpeg process {index} failed to start. Terminating program...")
             stop_flag = True
-
-            # Shutdown server gracefully
-            if httpd_server:
-                logging.debug(
-                    "Shutting down HTTP server due to FFmpeg failure...")
-                httpd_server.shutdown()
-            break
+            os._exit(1)  # Exit with error code
 
         index += 1
         time.sleep(FFMPEG_EXECUTION_INTERVAL)
@@ -267,7 +260,7 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
 
                             if alert_message_code in MESSAGE_CODES:
 
-                                global stop_flag, httpd_server
+                                global stop_flag
                                 stop_flag = True
 
                                 logging.info(
@@ -289,17 +282,12 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
                                     f"  - Test Duration: {test_duration:.2f} seconds")
                                 logging.info("=" * 60)
 
-                                # Send 200 response before shutting down
+                                # Send 200 response before exiting
                                 self.send_response(200)
                                 self.end_headers()
 
-                                logging.debug("Shutting down HTTP server...")
-
-                                # Shutdown server gracefully in a separate thread
-                                # to avoid blocking the handler
-                                if httpd_server:
-                                    threading.Thread(
-                                        target=httpd_server.shutdown, daemon=True).start()
+                                logging.debug("Program terminating...")
+                                os._exit(0)
 
                 except json.JSONDecodeError as e:
                     logging.error(f"Error parsing JSON: {e}")
@@ -340,7 +328,6 @@ if __name__ == "__main__":
 
     # Start HTTP server first
     with socketserver.TCPServer(("", ALERT_CALLBACK_SERVER_PORT), CallbackHandler) as httpd:
-        httpd_server = httpd  # Store global reference
         logging.info(
             f"Alert callback server running on port {ALERT_CALLBACK_SERVER_PORT}")
 
