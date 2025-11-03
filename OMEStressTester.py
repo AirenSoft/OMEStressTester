@@ -75,6 +75,7 @@ def start_ffmpeg_stream(index: int):
     try:
         proc = subprocess.Popen(
             cmd.split(),
+            stdin=subprocess.PIPE,   # enable sending 'q' for graceful quit
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
@@ -114,6 +115,10 @@ def start_ffmpeg_stream(index: int):
             logging.error("=" * 60)
             return None
         else:
+            # Warn if '-nostdin' is present; 'q' will not work in that case
+            if "-nostdin" in cmd:
+                logging.warning("FFmpeg command includes -nostdin; graceful 'q' shutdown will not work.")
+
             logging.debug(
                 f"FFmpeg process {index} verified successfully")
             return proc
@@ -164,8 +169,46 @@ def stop_all_ffmpeg():
         try:
             # Check if process exists and is running
             if p.poll() is None:
-                os.kill(p.pid, signal.SIGTERM)
-                logging.debug(f"Killed process {p.pid}")
+                # Try graceful shutdown first by sending 'q' to stdin
+                try:
+                    if p.stdin and not p.stdin.closed:
+                        logging.debug(
+                            f"Sending 'q' to FFmpeg (PID: {p.pid}) for graceful shutdown")
+                        p.stdin.write(b"q")
+                        p.stdin.flush()
+                        # Closing stdin can help ffmpeg exit quicker in some cases
+                        try:
+                            p.stdin.close()
+                        except Exception:
+                            pass
+                    else:
+                        logging.debug(
+                            f"FFmpeg (PID: {p.pid}) has no stdin; skipping 'q' send")
+
+                    # Wait a bit for graceful exit
+                    try:
+                        p.wait(timeout=10)
+                        logging.debug(
+                            f"Process {p.pid} exited gracefully with code {p.returncode}")
+                    except subprocess.TimeoutExpired:
+                        logging.debug(
+                            f"Process {p.pid} did not exit after 'q'; sending SIGTERM")
+                        os.kill(p.pid, signal.SIGTERM)
+                        try:
+                            p.wait(timeout=5)
+                            logging.debug(
+                                f"Process {p.pid} terminated after SIGTERM with code {p.returncode}")
+                        except subprocess.TimeoutExpired:
+                            logging.debug(
+                                f"Process {p.pid} still running; sending SIGKILL")
+                            os.kill(p.pid, signal.SIGKILL)
+                except BrokenPipeError:
+                    logging.debug(
+                        f"Broken pipe when sending 'q' to process {p.pid}; falling back to signals")
+                    os.kill(p.pid, signal.SIGTERM)
+                except Exception as e:
+                    logging.error(
+                        f"Error while attempting graceful shutdown of process {p.pid}: {e}")
             else:
                 logging.debug(f"Process {p.pid} already terminated")
         except ProcessLookupError:
