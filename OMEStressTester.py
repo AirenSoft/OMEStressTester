@@ -72,7 +72,9 @@ start_time = None
 def start_ffmpeg_stream(index: int):
     """Start ffmpeg process"""
     cmd = FFMPEG_COMMAND.replace("${seq}", str(index))
-    logging.info(f"Execute FFmpeg. seq: {index}, cmd: {cmd}")
+    
+    width = 2
+    logging.info(f"Execute FFmpeg. seq: {index + 1:{width}d}, cmd: {cmd}")
 
     try:
         proc = subprocess.Popen(
@@ -85,8 +87,8 @@ def start_ffmpeg_stream(index: int):
         # Add to processes list immediately to ensure cleanup
         with processes_lock:
             processes.append(proc)
-        logging.debug(
-            f"FFmpeg process {index} started with PID: {proc.pid}, added to process list")
+        # logging.debug(
+        #     f"FFmpeg process {index} started with PID: {proc.pid}, added to process list")
 
         # Wait briefly to check if process starts successfully
         time.sleep(0.5)
@@ -121,8 +123,8 @@ def start_ffmpeg_stream(index: int):
             if "-nostdin" in cmd:
                 logging.warning("FFmpeg command includes -nostdin; graceful 'q' shutdown will not work.")
 
-            logging.debug(
-                f"FFmpeg process {index} verified successfully")
+            # logging.debug(
+            #     f"FFmpeg process {index} verified successfully")
             return proc
 
     except FileNotFoundError:
@@ -180,8 +182,8 @@ def stop_all_ffmpeg():
                 # Try graceful shutdown first by sending 'q' to stdin
                 try:
                     if p.stdin and not p.stdin.closed:
-                        logging.debug(
-                            f"Sending 'q' to FFmpeg (PID: {p.pid}) for graceful shutdown")
+                        # logging.debug(
+                        #     f"Sending 'q' to FFmpeg (PID: {p.pid}) for graceful shutdown")
                         p.stdin.write(b"q")
                         p.stdin.flush()
                         # Closing stdin can help ffmpeg exit quicker in some cases
@@ -190,37 +192,41 @@ def stop_all_ffmpeg():
                         except Exception:
                             pass
                     else:
-                        logging.debug(
-                            f"FFmpeg (PID: {p.pid}) has no stdin; skipping 'q' send")
+                        # logging.debug(
+                        #     f"FFmpeg (PID: {p.pid}) has no stdin; skipping 'q' send")
+                        pass
 
                     # Wait a bit for graceful exit
                     try:
                         p.wait(timeout=10)
-                        logging.debug(
-                            f"Process {p.pid} exited gracefully with code {p.returncode}")
+                        # logging.debug(
+                        #     f"Process {p.pid} exited gracefully with code {p.returncode}")
                     except subprocess.TimeoutExpired:
-                        logging.debug(
-                            f"Process {p.pid} did not exit after 'q'; sending SIGTERM")
+                        # logging.debug(
+                        #     f"Process {p.pid} did not exit after 'q'; sending SIGTERM")
                         os.kill(p.pid, signal.SIGTERM)
                         try:
                             p.wait(timeout=5)
-                            logging.debug(
-                                f"Process {p.pid} terminated after SIGTERM with code {p.returncode}")
+                            # logging.debug(
+                            #     f"Process {p.pid} terminated after SIGTERM with code {p.returncode}")
                         except subprocess.TimeoutExpired:
-                            logging.debug(
-                                f"Process {p.pid} still running; sending SIGKILL")
+                            # logging.debug(
+                            #     f"Process {p.pid} still running; sending SIGKILL")
                             os.kill(p.pid, signal.SIGKILL)
                 except BrokenPipeError:
-                    logging.debug(
-                        f"Broken pipe when sending 'q' to process {p.pid}; falling back to signals")
+                    # logging.debug(
+                    #     f"Broken pipe when sending 'q' to process {p.pid}; falling back to signals")
                     os.kill(p.pid, signal.SIGTERM)
                 except Exception as e:
-                    logging.error(
-                        f"Error while attempting graceful shutdown of process {p.pid}: {e}")
+                    # logging.error(
+                    #     f"Error while attempting graceful shutdown of process {p.pid}: {e}")
+                    pass
             else:
-                logging.debug(f"Process {p.pid} already terminated")
+                # logging.debug(f"Process {p.pid} already terminated")
+                pass
         except ProcessLookupError:
-            logging.debug(f"Process {p.pid} not found (already terminated)")
+            # logging.debug(f"Process {p.pid} not found (already terminated)")
+            pass
         except Exception as e:
             logging.error(f"Error killing process {p.pid}: {e}")
 
@@ -299,51 +305,23 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
 
                     alert_type = payload_json.get('type', 'N/A')
 
-                    if alert_type == "INTERNAL_QUEUE" or alert_type == "EGRESS":
+                    #  "messages": [
+                    #     {
+                    #     "code": "INTERNAL_QUEUE_CONGESTION",
+                    #     "description": "Internal queue(s) is currently congested"
+                    #     }
+                    # ]
+                    alert_messages = payload_json.get('messages', [])
 
-                        #  "messages": [
-                        #     {
-                        #     "code": "INTERNAL_QUEUE_CONGESTION",
-                        #     "description": "Internal queue(s) is currently congested"
-                        #     }
-                        # ]
-                        alert_messages = payload_json.get('messages', [])
+                    # Check if any message has INTERNAL_QUEUE_CONGESTION code
+                    for message in alert_messages:
 
-                        # Check if any message has INTERNAL_QUEUE_CONGESTION code
-                        for message in alert_messages:
+                        alert_message_code = message.get('code', 'N/A')
 
-                            alert_message_code = message.get('code', 'N/A')
+                        if alert_message_code in MESSAGE_CODES:
 
-                            if alert_message_code in MESSAGE_CODES:
-
-                                global stop_flag
-                                stop_flag = True
-
-                                logging.info(
-                                    f"{alert_type} - {alert_message_code} alert received. {message.get('description', 'No description')}")
-
-                                with processes_lock:
-                                    total_streams = len(processes)
-                                test_duration = time.time() - start_time if start_time else 0
-
-                                stop_all_ffmpeg()
-
-                                logging.info("=" * 60)
-                                logging.info("Test Results:")
-                                logging.info(
-                                    f"  - Alert message code: {alert_message_code}")
-                                logging.info(
-                                    f"  - Total Streams Started: {total_streams}")
-                                logging.info(
-                                    f"  - Test Duration: {test_duration:.2f} seconds")
-                                logging.info("=" * 60)
-
-                                # Send 200 response before exiting
-                                self.send_response(200)
-                                self.end_headers()
-
-                                logging.debug("Program terminating...")
-                                os._exit(0)
+                            logging.info(
+                                f"                ! WARNING: {alert_type} - {alert_message_code}. {message.get('description', 'No description')}")
 
                 except json.JSONDecodeError as e:
                     logging.error(f"Error parsing JSON: {e}")
@@ -352,10 +330,8 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
             else:
                 logging.info(f"Received callback: {self.path} (no payload)")
 
-            # Send 200 response for other cases (only if not already sent)
-            if not hasattr(self, '_response_sent'):
-                self.send_response(200)
-                self.end_headers()
+            self.send_response(200)
+            self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()
@@ -396,7 +372,6 @@ if __name__ == "__main__":
         monitor_thread = threading.Thread(
             target=monitor_ffmpeg_processes, daemon=True)
         monitor_thread.start()
-        logging.debug("FFmpeg process monitor started")
 
         # Start FFmpeg execution thread after server is ready
         thread = threading.Thread(target=ffmpeg_runner, daemon=True)
