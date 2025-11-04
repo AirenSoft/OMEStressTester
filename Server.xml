@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<Server version="8">
+  <Name>OvenMediaEngine</Name>
+  <!-- Host type (origin/edge) -->
+  <Type>origin</Type>
+  <!-- Specify IP address to bind ("*" means all IPv4 IPs, "::" means all IPv6 IPs) -->
+  <!-- Uncomment the line below to enable IPv6 -->
+  <!-- <IP>::</IP> -->
+  <IP>*</IP>
+  <PrivacyProtection>false</PrivacyProtection>
+
+  <!-- 
+	To get the public IP address(mapped address of stun) of the local server. 
+	This is useful when OME cannot obtain a public IP from an interface, such as AWS or docker environment. 
+	If this is successful, you can use ${PublicIP} in your settings.
+	-->
+  <StunServer>stun.ovenmediaengine.com:13478</StunServer>
+
+  <Modules>
+    <!-- 
+		Currently OME only supports h2 like all browsers do. Therefore, HTTP/2 only works on TLS ports.			
+		-->
+    <HTTP2>
+      <Enable>true</Enable>
+    </HTTP2>
+
+    <LLHLS>
+      <Enable>true</Enable>
+    </LLHLS>
+
+    <!-- P2P works only in WebRTC and is experiment feature -->
+    <P2P>
+      <!-- disabled by default -->
+      <Enable>false</Enable>
+      <MaxClientPeersPerHostPeer>2</MaxClientPeersPerHostPeer>
+    </P2P>
+  </Modules>
+
+  <!-- Settings for the ports to bind -->
+  <Bind>
+    <Managers>
+      <API>
+        <Port>8081</Port>
+        <WorkerCount>1</WorkerCount>
+      </API>
+    </Managers>
+    <Providers>
+      <!-- Push providers -->
+      <RTMP>
+        <Port>${env:OME_RTMP_PROV_PORT:1935}</Port>
+        <WorkerCount>1</WorkerCount>
+      </RTMP>
+    </Providers>
+
+    <Publishers>
+      <LLHLS>
+        <Port>${env:OME_LLHLS_STREAM_PORT:3333}</Port>
+        <WorkerCount>1</WorkerCount>
+      </LLHLS>
+    </Publishers>
+  </Bind>
+
+  <Managers>
+    <Host>
+      <Names>
+        <Name>*</Name>
+      </Names>
+    </Host>
+    <API>
+      <AccessToken>ome:default</AccessToken>
+      <CrossDomains>
+        <Url>*</Url>
+      </CrossDomains>
+    </API>
+  </Managers>
+
+  <Alert>
+    <Url>http://localhost:8080/callback</Url>
+    <SecretKey></SecretKey>
+    <Timeout>3000</Timeout>
+    <Rules>
+      <InternalQueueCongestion />
+      <Egress>
+        <StreamStatus />
+      </Egress>
+    </Rules>
+  </Alert>
+
+  <VirtualHosts>
+    <!-- You can use wildcard like this to include multiple XMLs -->
+    <VirtualHost include="VHost*.xml" />
+    <VirtualHost>
+      <Name>default</Name>
+      <Distribution>ovenmediaengine.com</Distribution>
+
+      <!-- Settings for multi ip/domain and TLS -->
+      <Host>
+        <Names>
+          <Name>*</Name>
+        </Names>
+      </Host>
+
+      <!-- Default CORS Settings -->
+      <CrossDomains>
+        <Url>*</Url>
+      </CrossDomains>
+
+      <!-- Settings for applications -->
+      <Applications>
+        <Application>
+          <Name>app</Name>
+          <!-- Application type (live/vod) -->
+          <Type>live</Type>
+          <OutputProfiles>
+
+            <!-- Common setting for decoders. Decodes is optional. -->
+
+            <!-- <Decodes>
+							<ThreadCount>2</ThreadCount>
+							<OnlyKeyframes>false</OnlyKeyframes>
+						</Decodes> -->
+
+            <!-- Enable this configuration if you want to hardware acceleration using GPU -->
+            <HWAccels>
+              <Decoder>
+                <Enable>true</Enable>
+                <!-- 
+										Setting for Hardware Modules.
+										 - xma :Xilinx Media Accelerator
+										 - qsv :Intel Quick Sync Video
+										 - nv : Nvidia Video Codec SDK
+										 - nilogan: Netint VPU
+
+										You can use multiple modules by separating them with commas.
+										For example, if you want to use xma and nv, you can set it as follows.
+
+										<Modules>[ModuleName]:[DeviceId],[ModuleName]:[DeviceId],...</Modules>
+										<Modules>xma:0,nv:0</Modules>
+									-->
+                <Modules>nv:0</Modules>
+              </Decoder>
+              <Encoder>
+                <Enable>true</Enable>
+                <Modules>nv:0</Modules>
+              </Encoder>
+            </HWAccels>
+
+            <OutputProfile>
+              <Name>default</Name>
+              <OutputStreamName>${OriginStreamName}</OutputStreamName>
+              <Encodes>
+                <Video>
+                  <Name>video_1080</Name>
+                  <Codec>h264</Codec>
+                  <Bitrate>5024000</Bitrate>
+                  <Width>1920</Width>
+                  <Height>1080</Height>
+                  <Framerate>30</Framerate>
+                  <KeyFrameInterval>30</KeyFrameInterval>
+                  <BFrames>0</BFrames>
+                  <Preset>faster</Preset>
+                </Video>
+                <Audio>
+                  <Name>aac_audio</Name>
+                  <Codec>aac</Codec>
+                  <Bitrate>128000</Bitrate>
+                  <Samplerate>48000</Samplerate>
+                  <Channel>2</Channel>
+                  <BypassIfMatch>
+                    <Codec>eq</Codec>
+                  </BypassIfMatch>
+                </Audio>
+              </Encodes>
+            </OutputProfile>
+          </OutputProfiles>
+          <Providers>
+            <RTMP />
+          </Providers>
+          <Publishers>
+            <AppWorkerCount>1</AppWorkerCount>
+            <StreamWorkerCount>8</StreamWorkerCount>
+            <LLHLS>
+              <ChunkDuration>1</ChunkDuration>
+              <!-- <PartHoldBack> SHOULD be at least three times the <ChunkDuration> -->
+              <PartHoldBack>3</PartHoldBack>
+              <SegmentDuration>6</SegmentDuration>
+              <SegmentCount>10</SegmentCount>
+              <CrossDomains>
+                <Url>*</Url>
+              </CrossDomains>
+            </LLHLS>
+          </Publishers>
+        </Application>
+      </Applications>
+    </VirtualHost>
+  </VirtualHosts>
+</Server>
